@@ -11,6 +11,10 @@
 #include <linux/atomic.h>
 #include <linux/file.h>
 #include <linux/magic.h>
+#ifndef EROFS_SUPER_MAGIC_V1
+/* Linux 4.14 keeps EROFS_SUPER_MAGIC_V1 private to fs/erofs/erofs_fs.h. */
+#define EROFS_SUPER_MAGIC_V1 0xE0F5E1E2
+#endif
 #include <linux/exportfs.h>
 #include <linux/key-type.h>
 #include <linux/highmem.h>

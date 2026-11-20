@@ -1,21 +1,10 @@
 # Makefile for NoMount
 
-ifeq ($(filter /%,$(src)),)
-NM_REAL_PATH := $(realpath $(srctree)/$(src))
-else
-NM_REAL_PATH := $(realpath $(src))
-endif
-
-NOMOUNT_COMMITS := $(shell \
-    d='$(NM_REAL_PATH)'; \
-    while [ -n "$$d" ] && [ "$$d" != "/" ] && [ ! -d "$$d/.git" ]; do d=$$(dirname "$$d"); done; \
-    if [ -d "$$d/.git" ] && git -C "$$d" remote get-url origin 2>/dev/null | grep -q 'nomount'; then \
-        git -C "$$d" rev-list --count HEAD 2>/dev/null; \
-    fi)
-
-ifneq ($(NOMOUNT_COMMITS),)
-ccflags-y += -DNOMOUNT_COMMIT_COUNT=\"$(NOMOUNT_COMMITS)\"
-endif
+# NoMount is vendored into this kernel tree (fs/nomount/) from
+# maxsteeel/nomount v2.3.1 (dcd77d03e991, rev-list 785), so there is no
+# .git of its own. Pin the commit count upstream would compute.
+NOMOUNT_COMMIT_COUNT ?= 785
+ccflags-y += -DNOMOUNT_COMMIT_COUNT=\"$(NOMOUNT_COMMIT_COUNT)\"
 
 obj-$(CONFIG_NOMOUNT) += nomount.o
 ccflags-y += -std=gnu11 -Wno-declaration-after-statement -O3 -fno-stack-protector
