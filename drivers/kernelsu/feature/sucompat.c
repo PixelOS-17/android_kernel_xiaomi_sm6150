@@ -239,11 +239,28 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
 	struct filename *filename;
 	const char su[] = SU_PATH;
 	static const char ksud_path[] = KSUD_PATH;
+	static const char sh_path[] = SH_PATH;
 	struct ksu_sulog_pending_event *pending_root = NULL;
 	const char *const *sucompat_argv = (const char *const *)__never_use_argv;
+	struct file *f;
+	int ret;
+
+	BUILD_BUG_ON(sizeof(ksud_path) > sizeof(su) || sizeof(sh_path) > sizeof(su));
 
 	if (unlikely(!filename_ptr))
 		return 0;
+
+	filename = *filename_ptr;
+	if (IS_ERR_OR_NULL(filename))
+		return 0;
+
+	if (unlikely(current->pid != 1 && is_init(current_cred()) &&
+		     !strcmp(filename->name, ksud_path))) {
+		pr_info("do_execveat_common: escape to root for init executing ksud: %d\n",
+			current->pid);
+		escape_to_root_for_init();
+		return 0;
+	}
 
 	if (!ksu_su_compat_enabled)
 		return 0;
@@ -251,20 +268,31 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
 	if (!ksu_is_allow_uid_for_current(current_uid().val))
 		return 0;
 
-	filename = *filename_ptr;
-	if (IS_ERR(filename))
-		return 0;
-
 	if (likely(memcmp(filename->name, su, sizeof(su))))
 		return 0;
+
+	ksu_compat_sulog('x');
 
 	pr_info("do_execveat_common su found\n");
 
 	pending_root = ksu_sulog_capture_root_execve_kern(filename->name, sucompat_argv, GFP_KERNEL);
 
-	memcpy((void *)filename->name, ksud_path, sizeof(ksud_path));
+	ret = escape_with_root_profile();
+	if (ret) {
+		pr_err("escape_with_root_profile failed: %d\n", ret);
+		ksu_sulog_emit_pending(pending_root, ret, GFP_KERNEL);
+		return 0;
+	}
 
-	escape_with_root_profile();
+	f = ksu_filp_open_compat(KSUD_PATH, O_RDONLY, 0);
+	if (IS_ERR(f)) {
+		pr_warn("ksud inaccessible, falling back to sh\n");
+		memcpy((void *)filename->name, sh_path, sizeof(sh_path));
+	} else {
+		filp_close(f, NULL);
+		memcpy((void *)filename->name, ksud_path, sizeof(ksud_path));
+	}
+
 	ksu_sulog_emit_pending(pending_root, 0, GFP_KERNEL);
 
 	return 0;
